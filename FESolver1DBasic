@@ -1,0 +1,271 @@
+%% 1D Mechanical FE Solver
+% This code uses linear elements and the direct stiffness method to solve a
+% simple or complex 1D problem
+
+% Written by James Anderson with only a little help from ChatGPT
+% April 2025
+
+%% Prep Workspace
+clear
+clf
+close all
+clc
+
+%% Define The Problem
+% Model Definition
+tot_len = 11; % Total length of problem
+num_el = 11; %# of elements desired
+A = [10,20]; % cross-sectional area - add more if discontinuous
+A_bounds = [0,7;7,11]; % input boundaries of each cross-sectional area as row in matrix
+
+% Boundary Conditions
+pos_fixed = [1]; % Position of fixed nodes - Make sure on real nodes!
+pos_loads = [5]; % Position of loads
+load_vals = [100]; % load values
+pos_const_mo = [10]; % Constrained motion positions
+const_mo = [-.5];
+
+% Material Conditions
+E = [7,9]; % Young's Modulus - more if discontinuous, order left to right
+E_bounds = [0,2;2,11]; % input boundaries of each modulus as row in matrix
+
+%% Create Mesh
+num_nod = num_el +1; % Number of nodes
+
+% Define the nodes struct
+nodes.num = [1:num_nod]; % node numbers (id's)
+nodes.pos = [0:tot_len/num_el:tot_len]; % node positions
+nodes.fixed = zeros(1,num_nod);
+nodes.load = zeros(1,num_nod);
+nodes.const = zeros(1,num_nod);
+
+% Error codes to verify no human error
+for i = 1:length(pos_fixed) 
+    if isempty(find(nodes.pos == pos_fixed(i)))
+        error('fixed BC doesn''t line up with actual nodes')
+    end
+end
+for i = 1:length(pos_loads)
+    if isempty(find(nodes.pos == pos_loads(i)))
+        error('load BC doesn''t line up with actual nodes')
+    end
+end
+for i = 1:length(E_bounds) 
+    if isempty(find(nodes.pos == E_bounds(i)))
+        error('E_bounds doesn''t line up with actual nodes')
+    end
+end
+for i = 1:length(A_bounds)
+    if isempty(find(nodes.pos == A_bounds(i), 1))
+        error('A_bounds doesn''t line up with actual nodes')
+    end
+end
+for i = 1:length(const_mo)
+    if isempty(find(nodes.pos == pos_const_mo(i)));
+        error('pos_const_mo doesn''t line up with actual nodes')
+    end
+end
+if length(pos_loads) ~= length(load_vals)
+    error('pos_loads and load_vals different lengths')
+end
+if isempty(pos_const_mo) && isempty(pos_fixed)
+    error('Must constrain motion at at least one point')
+end
+
+% Assigning Fixed BCs to appropriate nodes
+for i = 1:length(pos_fixed)
+    fixed = find(nodes.pos == pos_fixed(i));
+    nodes.fixed(fixed) = 1;
+end
+
+% Assigning loads to appropriate nodes
+for i = 1:length(load_vals)
+    loaded = find(nodes.pos == pos_loads(i));
+    nodes.load(loaded) = load_vals(i);
+end
+    
+% Assigning Constrained motions to appropriate nodes
+for i = 1:length(const_mo)
+    constrained = find(nodes.pos == pos_const_mo(i));
+    nodes.const(constrained) = const_mo(i);
+end
+
+% Defining Elements Struct
+elem.num = [1:num_el];
+elem.E = zeros(1,num_el);
+elem.A = zeros(1,num_el);
+elem.k = zeros(1,num_el);
+elem.len = zeros(1,num_el);
+elem.mid = zeros(1,num_el); % midpoint of each element
+elem.n1 = nodes.num(1:num_nod-1);
+elem.n2 = nodes.num(2:num_nod);
+
+% Defining element midpoints
+for i = 1:num_el
+    elem.mid(i) = (nodes.pos(i) + nodes.pos(i+1))/2;
+end
+
+% Determining element lengths
+for i = 1:num_el
+    elem.len(i) = nodes.pos(elem.n2(i))-nodes.pos(elem.n1(i));
+end
+
+% Apply E values to according elements
+for i = 1:num_el
+    for j = 1:length(E)
+        if elem.mid(i) >= E_bounds(j,1) && elem.mid(i) <= E_bounds(j,2)
+            elem.E(i) = E(j);
+        end
+    end
+end
+
+% Apply A values to appropriate elements
+for i = 1:num_el
+    for j = 1:length(A)
+        if elem.mid(i) >= A_bounds(j,1) && elem.mid(i) <= A_bounds(j,2)
+            elem.A(i) = A(j);
+        end
+    end
+end
+
+% Determine k value for each element
+for i = 1:num_el
+    elem.k(i) = elem.A(i) * elem.E(i) / elem.len(i);
+end
+%% Visualize Mesh
+figure
+hold on
+
+% Draws elements with color associated with the stiffness of the element
+for i = 1:num_nod
+    if i <= num_el % for nodes with elements to their right
+        if nodes.fixed(i) == 1
+            plot(nodes.pos(i),0,'or') % fixed nodes red
+        elseif nodes.const(i) ~= 0
+            plot(nodes.pos(i),0,'ok') % constrained nodes black
+        else
+            plot(nodes.pos(i),0,'og') % free nodes green
+        end 
+        colorval = (elem.k(i) - min(elem.k))/(max(elem.k)-min(elem.k));
+        line([nodes.pos(i),nodes.pos(i+1)],[0,0],'Color',[.5,colorval,.5])
+    else % for last node only
+        if nodes.fixed(i) == 1
+            plot(nodes.pos(i),0,'or') % red if fixed
+        elseif nodes.const(i) ~= 0
+            plot(nodes.pos(i),0,'ok') % black if constrained
+        else
+            plot(nodes.pos(i),0,'og') % green if free
+        end 
+    end
+end
+xlim([-1,tot_len + 1])
+ylim([-1,1])
+
+% Draws arrow for applied forces
+drawArrow = @(x,y) quiver( x(1),y(1),x(2)-x(1),y(2)-y(1),0,'Color','k'); % Defines arrow-drawing function
+for i = 1:num_nod
+    if nodes.load(i) > 0
+        drawArrow([nodes.pos(i)-0.5,nodes.pos(i)+0.5] , [0.1,0.1]);
+    elseif nodes.load(i)<0
+        drawArrow([nodes.pos(i)+0.5,nodes.pos(i)-0.5] , [0.1,0.1]);
+    end
+end
+
+
+%% Create Stiffness Matrix AE/L
+
+% Create k, the global stiffness matrix
+k = zeros(num_nod);
+for i = 1:num_nod-1
+    for j = 1:num_nod-1
+        if i == j
+            k(i,j) = k(i,j) + elem.k(i);
+            k(i+1,j) = -elem.k(i);
+            k(i,j+1) = -elem.k(i);
+            k(i+1,j+1) = elem.k(i);
+        end
+    end
+end
+
+%% Finalize F and U Matrices, and apply BCs in U, F, & k - Remember F=k*U
+
+% F matrix - this is the one that with the loads
+F = nodes.load';
+
+% U matrix - This is the one with the displacements
+U = zeros(1,num_nod);
+
+% hold onto original k for later use
+khold = k;
+
+% Apply motion constraints by modifying k and F
+constrained_dofs = find(nodes.const ~= 0);
+for i = constrained_dofs
+    k(i,:) = 0;         % Zero out row
+%     k(:,i) = 0;         % Zero out column
+    k(i,i) = 1;         % Place 1 on the diagonal
+    F(i) = nodes.const(i);  % Set F = prescribed displacement
+end
+
+% Apply fixed boundary conditions by removing rows/columns
+free_nod = find(nodes.fixed == 0); % Unconstrained DOFs
+k_reduced = k(free_nod, free_nod);
+F_reduced = F(free_nod);
+
+% Solve only for free DOFs
+U(free_nod) = k_reduced \ F_reduced;
+
+
+%% Postprocessing
+
+% New node positions
+for i = 1:num_nod
+    nodes.ppos(i) = nodes.pos(i) + U(i);
+end
+
+% New element lengths
+for i = 1:num_el
+    elem.plen(i) = nodes.ppos(elem.n2(i))-nodes.ppos(elem.n1(i));
+    if elem.plen(i) <= 0
+        error('Negative jacobian at element %f0.0',i)
+    end
+end
+
+% Calculating stress -> remember stress = E*epsilon
+elem.stress = zeros(1, num_el);  % Preallocate
+for i = 1:num_el
+    u1 = U(elem.n1(i));
+    u2 = U(elem.n2(i));
+    elem.stress(i) = elem.E(i) * (u2 - u1) / elem.len(i);
+end
+
+%% Visualize Postprocessing
+
+% Create colorscale for stress viz
+maxstress = max(elem.stress);
+minstress = min(elem.stress);
+
+% Plots new node positions with lines between them of a color scaled to the
+% stress they experience - red = positive, green = negative
+figure
+hold on
+for i = 1:num_nod
+    if i <= num_el
+        if elem.stress(i) > 0
+            plot(nodes.ppos(i),0,'o','Color',[.5,.5,.5])
+            line([nodes.ppos(i),nodes.ppos(i+1)],[0,0],'Color',[abs(elem.stress(i)/maxstress),0,0])
+        else
+            plot(nodes.ppos(i),0,'o','Color',[.5,.5,.5])
+            line([nodes.ppos(i),nodes.ppos(i+1)],[0,0],'Color',[0,abs(elem.stress(i)/minstress),0])
+        end
+    else
+        plot(nodes.ppos(i),0,'o')  
+    end
+end
+xlim([-1,tot_len+1])
+ylim([-.5,.5])
+
+
+
+
+
