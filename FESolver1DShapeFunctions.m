@@ -19,12 +19,6 @@ tot_len = 3;
 % # of elements desired
 num_el = 8; 
 
-% % cross-sectional area - add more if discontinuous
-% A = [pi*.0225,pi*.01,pi*.0025]; 
-% % input boundaries of each cross-sectional area as row in matrix
-% A_bounds = [0,1;1,2;2,3]; 
-
-
 % Area for Tapered Bar Problem
 rightr = .05; % Right radius
 leftr = .15; % Left radius
@@ -74,11 +68,6 @@ for i = 1:length(E_bounds)
         error('E_bounds doesn''t line up with actual nodes')
     end
 end
-% for i = 1:length(A_bounds)
-%     if isempty(find(nodes.pos == A_bounds(i), 1))
-%         error('A_bounds doesn''t line up with actual nodes')
-%     end
-% end
 for i = 1:length(const_mo)
     if isempty(find(nodes.pos == pos_const_mo(i)));
         error('pos_const_mo doesn''t line up with actual nodes')
@@ -314,11 +303,11 @@ if Query == 1
         if qtype == 1 % If displacement selected
             for i = 1:num_nod
                 if x > nodes.pos(i) && x < nodes.pos(i+1) % Finding the right element in question
-                    u1 = u(i); % Displacement of first node of element
-                    u2 = u(i+1); % Displacement of 2nd node of element
+                    u1 = U(i); % Displacement of first node of element
+                    u2 = U(i+1); % Displacement of 2nd node of element
                     N1 = (nodes.pos(i+1)-x)/el_len; % First Shape function
                     N2 = (x-nodes.pos(i))/el_len; % 2nd Shape function
-                    displacementx = N1*u1+N2*u2; % Multiplying to interpolate values. Could also use interp1 or interp2
+                    output = N1*u1+N2*u2; % Multiplying to interpolate values. Could also use interp1 or interp2
                 end
             end
             fprintf('Displacement at x= %2.1f is %2.3f',x,output)
@@ -365,8 +354,7 @@ if Query == 1
             end
         end
     end
-else
-    disp('ok, thank you') % if didn't want to query a value
+
 end
 
 
